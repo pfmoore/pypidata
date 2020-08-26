@@ -22,17 +22,18 @@ conn.create_function("normalize", 1, normalize)
 
 # Get the packages to update
 PACKAGE_SQL = """\
-    SELECT normalize(name) FROM packages_xmlrpc
-    UNION
-    SELECT normalize(name) FROM packages_simple
-    EXCEPT
-    SELECT normalize(name) FROM package_data_simple
+    SELECT DISTINCT name
+    FROM changelog
+    WHERE timestamp > (SELECT max(timestamp) FROM package_data_simple)
 """
 names = [n for (n,) in conn.execute(PACKAGE_SQL).fetchall()]
 
 # Only do 100,000 at a time
-print(f"Reading 100,000 of {len(names):,}")
-names = names[:100000]
+if len(names) > 100000:
+    print(f"Reading 100,000 of {len(names):,}")
+    names = names[:100000]
+else:
+    print(f"Reading {len(names):,} packages")
 
 def write_db(channel, p, t):
     conn = sqlite3.connect(DB)
