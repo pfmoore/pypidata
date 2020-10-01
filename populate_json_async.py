@@ -2,7 +2,7 @@ import trio
 import httpx
 from datetime import datetime
 from rich.progress import Progress
-
+import sys
 import sqlite3
 
 DB = "PyPI.db"
@@ -10,13 +10,17 @@ DB = "PyPI.db"
 # Open the database
 conn = sqlite3.connect(DB)
 
-# Get the packages to update
-PACKAGE_SQL = """\
-    SELECT DISTINCT name
-    FROM changelog
-    WHERE timestamp > (SELECT max(timestamp) FROM package_data_json)
-"""
-names = [n for (n,) in conn.execute(PACKAGE_SQL).fetchall()]
+if len(sys.argv) > 1:
+    with open(sys.argv[1]) as f:
+        names = [name.strip() for name in f]
+else:
+    # Get the packages to update
+    PACKAGE_SQL = """\
+        SELECT DISTINCT name
+        FROM changelog
+        WHERE timestamp > (SELECT max(timestamp) FROM package_data_json)
+    """
+    names = [n for (n,) in conn.execute(PACKAGE_SQL).fetchall()]
 
 # Only do 100,000 at a time
 if len(names) > 100000:
@@ -33,8 +37,13 @@ def write_db(channel, p, t):
         except trio.EndOfChannel:
             return
         else:
-            if json is not None:
-                with conn:
+            with conn:
+                if json is None:
+                    conn.execute(
+                        "DELETE FROM package_data_json WHERE name=?",
+                        (name,)
+                    )
+                else:
                     conn.execute("""\
                         INSERT INTO package_data_json (
                             name,
@@ -48,7 +57,7 @@ def write_db(channel, p, t):
                         """,
                         dict(name=name, timestamp=timestamp, json=json)
                     )
-                conn.commit()
+            conn.commit()
             p.update(t, advance=1.0)
 
 
