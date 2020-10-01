@@ -1,0 +1,69 @@
+last_serial: INT
+info: DICT
+releases: DICT
+urls: LIST
+
+info:
+    author <class 'str'>
+    author_email <class 'str'>
+    bugtrack_url <class 'NoneType'>
+    classifiers <class 'list'>
+    description <class 'str'>
+    description_content_type <class 'str'>
+    docs_url <class 'NoneType'>
+    download_url <class 'str'>
+    downloads <class 'dict'>
+    home_page <class 'str'>
+    keywords <class 'str'>
+    license <class 'str'>
+    maintainer <class 'str'>
+    maintainer_email <class 'str'>
+    name <class 'str'>
+    package_url <class 'str'>
+    platform <class 'str'>
+    project_url <class 'str'>
+    project_urls <class 'dict'>
+    release_url <class 'str'>
+    requires_dist <class 'list'>
+    requires_python <class 'str'>
+    summary <class 'str'>
+    version <class 'str'>
+    yanked <class 'bool'>
+    yanked_reason <class 'NoneType'>
+
+releases: keys are release number, values are LIST of DICT:
+    comment_text <class 'str'>
+    digests <class 'dict'>
+    downloads <class 'int'>
+    filename <class 'str'>
+    has_sig <class 'bool'>
+    md5_digest <class 'str'>
+    packagetype <class 'str'>
+    python_version <class 'str'>
+    requires_python <class 'NoneType'>
+    size <class 'int'>
+    upload_time <class 'str'>
+    upload_time_iso_8601 <class 'str'>
+    url <class 'str'>
+    yanked <class 'bool'>
+    yanked_reason <class 'NoneType'>
+
+urls: elements are DICT
+    comment_text <class 'str'>
+    digests <class 'dict'>
+    downloads <class 'int'>
+    filename <class 'str'>
+    has_sig <class 'bool'>
+    md5_digest <class 'str'>
+    packagetype <class 'str'>
+    python_version <class 'str'>
+    requires_python <class 'str'>
+    size <class 'int'>
+    upload_time <class 'str'>
+    upload_time_iso_8601 <class 'str'>
+    url <class 'str'>
+    yanked <class 'bool'>
+    yanked_reason <class 'NoneType'>
+
+The keys for urls elements, and releases[x] elements, are the same.
+urls is the same as releases[info["version"]]
