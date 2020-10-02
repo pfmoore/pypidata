@@ -39,6 +39,8 @@ if len(names) > 100000:
 else:
     print(f"Reading {len(names):,} packages")
 
+names = [normalize(n) for n in names]
+
 def write_db(channel, p, t):
     conn = sqlite3.connect(DB)
     while True:
@@ -73,7 +75,6 @@ def write_db(channel, p, t):
 
 async def get_page(client, channel, name, p, t):
     timestamp = int(datetime.now().timestamp())
-    name = normalize(name)
     response = await client.get(f"https://pypi.org/simple/{name}/")
     p.update(t, advance=1.0)
     page = response.text if not response.is_error else None

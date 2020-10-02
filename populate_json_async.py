@@ -4,8 +4,12 @@ from datetime import datetime
 from rich.progress import Progress
 import sys
 import sqlite3
+import re
 
 DB = "PyPI.db"
+
+def normalize(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 # Open the database
 conn = sqlite3.connect(DB)
@@ -28,6 +32,8 @@ if len(names) > 100000:
     names = names[:100000]
 else:
     print(f"Reading {len(names):,} packages")
+
+names = [normalize(n) for n in names]
 
 def write_db(channel, p, t):
     conn = sqlite3.connect(DB)
