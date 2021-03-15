@@ -11,9 +11,6 @@ CREATE TABLE IF NOT EXISTS projects (
     description_content_type TEXT,
     docs_url TEXT,
     download_url TEXT,
-    downloads_last_day INTEGER,
-    downloads_last_week INTEGER,
-    downloads_last_month INTEGER,
     home_page TEXT,
     keywords TEXT,
     license TEXT,
@@ -38,3 +35,29 @@ CREATE TABLE IF NOT EXISTS project_urls (
     CONSTRAINT project_urls_pk PRIMARY KEY (project_name, url_type)
 );
 
+CREATE TABLE IF NOT EXISTS project_files (
+    file_id INTEGER PRIMARY KEY,
+    project_name TEXT,
+    version TEXT,
+    comment_text TEXT,
+    filename TEXT,
+    has_sig INTEGER,
+    md5_digest TEXT,
+    packagetype TEXT,
+    python_version TEXT,
+    requires_python TEXT,
+    size INTEGER,
+    upload_time TEXT,
+    upload_time_iso_8601 TEXT,
+    url TEXT,
+    yanked INTEGER,
+    yanked_reason TEXT,
+    CONSTRAINT project_files_uk UNIQUE (project_name, filename)
+);
+
+CREATE TABLE IF NOT EXISTS file_digests (
+    file_id INTEGER REFERENCES project_files(file_id),
+    digest_type TEXT,
+    digest TEXT,
+    CONSTRAINT file_digests_pk PRIMARY KEY (file_id, digest_type)
+);
