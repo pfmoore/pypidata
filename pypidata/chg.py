@@ -27,7 +27,7 @@ def main(args):
     with Progress() as progress:
         latest = pypi.changelog_last_serial()
         print(f"Fetching {since}..{latest}")
-        task = progress.add_task("[red]Getting changelog...", total=latest)
+        task = progress.add_task("Getting changelog...", total=latest)
         while True:
             progress.update(task, completed=since)
             next_batch = pypi.changelog_since_serial(since)
