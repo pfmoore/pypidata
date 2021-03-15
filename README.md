@@ -2,7 +2,6 @@
 
 To refresh the database, perform the following steps:
 
-1. `py get_package_data.py` (takes around 1 min)
-2. `py get_changelog.py`
-3. `py populate_simple_async.py`
-4. `py populate_json_async.py`
+1. `py -m pypidata raw` (raw data)
+2. `py -m pypidata pkg` (extract metadata to tables)
+3. `py -m pypidata chg` (changelog)
