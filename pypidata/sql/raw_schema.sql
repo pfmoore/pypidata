@@ -22,3 +22,4 @@ CREATE TABLE IF NOT EXISTS packages (
   display_name TEXT,
   last_serial INT NOT NULL
 );
+CREATE INDEX packages_i1 on packages(last_serial);
