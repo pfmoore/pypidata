@@ -234,8 +234,9 @@ def write_package(db, name, package_data):
                 yanked = file.get("yanked"),
                 yanked_reason = file.get("yanked_reason"),
             )
-            cursor = db.execute(PROJECT_FILES_SQL, project_files_args)
-            file_id = cursor.lastrowid
+            db.execute(PROJECT_FILES_SQL, project_files_args)
+            cursor = db.execute("SELECT file_id FROM project_files WHERE project_name = ? AND version = ?", (name, rel))
+            file_id, = cursor.fetchone()
             digests = file.get("digests")
             if digests:
                 db.executemany(FILE_DIGESTS_SQL, [dict(file_id=file_id, digest_type=k, digest=v) for k, v in digests.items()])
