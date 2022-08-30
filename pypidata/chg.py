@@ -1,8 +1,10 @@
 import re
-from rich.progress import Progress
-import xmlrpc.client
 import sqlite3
 import time
+import xmlrpc.client
+
+from rich.progress import Progress
+
 
 def normalize(name):
     return re.sub(r"[-_.]+", "-", name).lower()
@@ -12,6 +14,7 @@ def params(batch):
         yield normalize(n), n, v, t, a, s
 
 class RateLimitedServerProxy(xmlrpc.client.ServerProxy):
+    # See https://github.com/pypi/warehouse/issues/8753
     def __getattr__(self, name):
         time.sleep(1)
         return super(RateLimitedServerProxy, self).__getattr__(name)
@@ -27,9 +30,10 @@ def main(args):
     with Progress() as progress:
         latest = pypi.changelog_last_serial()
         print(f"Fetching {since}..{latest}")
-        task = progress.add_task("Getting changelog...", total=latest)
+        start = since
+        task = progress.add_task("Getting changelog...", total=latest-start)
         while True:
-            progress.update(task, completed=since)
+            progress.update(task, completed=since-start)
             next_batch = pypi.changelog_since_serial(since)
             if not next_batch:
                 break
