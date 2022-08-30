@@ -1,11 +1,15 @@
 CREATE TABLE IF NOT EXISTS json_data (
     name TEXT PRIMARY KEY,
     serial INT NOT NULL,
+    url TEXT,
+    etag TEXT,
     data TEXT
 );
 CREATE TABLE IF NOT EXISTS simple_data (
     name TEXT PRIMARY KEY,
     serial INT NOT NULL,
+    url TEXT,
+    etag TEXT,
     data TEXT
 );
 CREATE TABLE IF NOT EXISTS changelog (

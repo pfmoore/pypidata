@@ -1,14 +1,17 @@
-import asyncio
-import aiosqlite
-import httpx
-import json
 import argparse
-import xmlrpc.client
-import zlib
+import asyncio
+import json
 import re
 import sys
+import xmlrpc.client
+import zlib
+from collections import Counter
 from pathlib import Path
+
+import aiosqlite
+import httpx
 from rich.progress import Progress
+
 
 def normalize(name):
     return re.sub(r"[-_.]+", "-", name).lower()
@@ -18,34 +21,53 @@ URLs = {
     "simple": "https://pypi.org/simple/{name}/",
 }
 
-async def update_page(sem, db, page_type, name, last_serial, upd):
+async def fetch_url(client, url, etag):
+    headers = None
+    if etag:
+        headers = {"If-None-Match": etag}
+    tries = 0
+    while True:
+        try:
+            return await client.get(url, headers=headers)
+        except httpx.ConnectTimeout:
+            tries += 1
+            if tries > 10:
+                return None
+            await asyncio.sleep(1)
+
+
+async def update_page(sem, db, page_type, name, last_serial, prev_etag):
     async with sem:
-        async with httpx.AsyncClient() as client:
-            tries = 0
-            while True:
-                try:
-                    response = await client.get(URLs[page_type].format(name=name))
-                    break
-                except httpx.ConnectTimeout:
-                    tries += 1
-                    if tries > 10:
-                        print(f"Failed to fetch {name} ({page_type}) - skipping...")
-                        return
-                    await asyncio.sleep(1)
+        async with httpx.AsyncClient(headers={"User-Agent": "pypidata/0.1"}) as client:
+            url = URLs[page_type].format(name=name)
+            response = await fetch_url(client, url, prev_etag)
+            if response is None:
+                print(f"Failed to fetch {name} ({page_type}) - skipping...")
+                return "Timeout"
+            if response.status_code == 304:
+                # Not modified
+                return "Not modified"
             data = response.text if not response.is_error else None
+            etag = response.headers.get("ETag")
+
+            # serial = get_serial(data, last_serial, response, page_type)
             if data is None:
                 serial = last_serial
-            elif page_type == "json":
-                serial = json.loads(data)["last_serial"]
             else:
-                last_line = data.splitlines()[-1]
-                m = re.fullmatch(r"<!--SERIAL (\d+)-->", last_line)
-                if m:
-                    serial = int(m.group(1))
+                serial = response.headers.get("X-PyPI-Last-Serial")
+            if serial is None:
+                # No serial in the response headers
+                if page_type == "json":
+                    serial = json.loads(data)["last_serial"]
                 else:
-                    print(data)
-                    print("Oops: Last line does not match:", last_line)
-                    serial = None
+                    last_line = data.splitlines()[-1]
+                    m = re.fullmatch(r"<!--SERIAL (\d+)-->", last_line)
+                    if m:
+                        serial = int(m.group(1))
+                    else:
+                        print(data)
+                        print("Oops: Last line does not match:", last_line)
+                        serial = None
 
             #assert serial >= last_serial, f"{name}: Page has {serial}, package list has {last_serial}"
 
@@ -56,18 +78,20 @@ async def update_page(sem, db, page_type, name, last_serial, upd):
                 INSERT INTO {page_type}_data (
                     name,
                     serial,
+                    url,
+                    etag,
                     data
                 )
-                VALUES (:name, :serial, :data)
+                VALUES (:name, :serial, :url, :etag, :data)
                 ON CONFLICT(name) DO UPDATE SET
                     serial = :serial,
+                    url = :url,
+                    etag = :etag,
                     data = :data
                 """,
-                dict(name=name, serial=serial, data=data)
+                dict(name=name, serial=serial, url=url, etag=etag, data=data)
             )
-        #print(page_type, name)
-        #print(".", flush=True, end="")
-        upd()
+        return "Fetched"
 
 async def get_out_of_date(db, page_type, args):
     names = []
@@ -80,21 +104,20 @@ async def get_out_of_date(db, page_type, args):
             name = name.strip()
             if not name or name.startswith("#"):
                 continue
-            names.append((name, 0))
+            names.append((name, 0, None))
     elif len(args.name) > 0:
-        names = [(n,0) for n in args.name]
+        names = [(n,0, None) for n in args.name]
     else:
         SQL = f"""\
-        SELECT name, last_serial
+        SELECT name, last_serial, d.etag
         FROM packages p LEFT JOIN {page_type}_data d USING (name)
-        GROUP BY name
-        HAVING p.last_serial > coalesce(max(d.serial), 0)
+        WHERE p.last_serial > coalesce(d.serial, 0)
         ORDER BY name
         """
         async with db.execute(SQL) as cursor:
             async for row in cursor:
-                name,serial = row
-                names.append((name, serial))
+                name, serial, etag = row
+                names.append((name, serial, etag))
     
     if args.limit:
         names = names[:args.limit]
@@ -105,18 +128,23 @@ async def update_all_pages(db, page_type, args, progress):
     print(f"Updating {len(packages)} {page_type} pages")
     taskbar = progress.add_task(f"Updating {page_type}", total=len(packages))
     sem = asyncio.Semaphore(100)
-    updates = [
-        update_page(
+    async def upd(name, last_serial, etag):
+        result = await update_page(
             sem,
             db,
             page_type,
             name,
             last_serial,
-            upd=lambda: progress.update(taskbar, advance=1)
+            etag,
         )
-        for name, last_serial in packages
+        progress.update(taskbar, advance=1)
+        return result
+    updates = [
+        upd(name, last_serial, etag)
+        for name, last_serial, etag in packages
     ]
-    await asyncio.gather(*updates)
+    results = await asyncio.gather(*updates)
+    return Counter(results).most_common()
 
 async def update_packages(db):
     # Get the data from XMLRPC
@@ -145,11 +173,14 @@ async def main(args):
             print("Updating package list")
             await update_packages(db)
         print("Got package list")
-        tasks = []
         with Progress() as progress:
-            for page_type in args.type:
-                tasks.append(asyncio.create_task(update_all_pages(db, page_type, args, progress)))
-            await asyncio.wait(tasks)
+            results = await asyncio.gather(*[
+                update_all_pages(db, page_type, args, progress)
+                for page_type in args.type
+            ])
+        for page_type, res in zip(args.type, results):
+            for result, count in res:
+                print(page_type, result, count)
         await db.commit()
 
 if __name__ == "__main__":
