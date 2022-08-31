@@ -36,62 +36,61 @@ async def fetch_url(client, url, etag):
             await asyncio.sleep(1)
 
 
-async def update_page(sem, db, page_type, name, last_serial, prev_etag):
+async def update_page(client, sem, db, page_type, name, last_serial, prev_etag):
     async with sem:
-        async with httpx.AsyncClient(headers={"User-Agent": "pypidata/0.1"}) as client:
-            url = URLs[page_type].format(name=name)
-            response = await fetch_url(client, url, prev_etag)
-            if response is None:
-                print(f"Failed to fetch {name} ({page_type}) - skipping...")
-                return "Timeout"
-            if response.status_code == 304:
-                # Not modified
-                return "Not modified"
-            data = response.text if not response.is_error else None
-            etag = response.headers.get("ETag")
+        url = URLs[page_type].format(name=name)
+        response = await fetch_url(client, url, prev_etag)
+        if response is None:
+            print(f"Failed to fetch {name} ({page_type}) - skipping...")
+            return "Timeout"
+        if response.status_code == 304:
+            # Not modified
+            return "Not modified"
+        data = response.text if not response.is_error else None
+        etag = response.headers.get("ETag")
 
-            # serial = get_serial(data, last_serial, response, page_type)
-            if data is None:
-                serial = last_serial
+        # serial = get_serial(data, last_serial, response, page_type)
+        if data is None:
+            serial = last_serial
+        else:
+            serial = response.headers.get("X-PyPI-Last-Serial")
+        if serial is None:
+            # No serial in the response headers
+            if page_type == "json":
+                serial = json.loads(data)["last_serial"]
             else:
-                serial = response.headers.get("X-PyPI-Last-Serial")
-            if serial is None:
-                # No serial in the response headers
-                if page_type == "json":
-                    serial = json.loads(data)["last_serial"]
+                last_line = data.splitlines()[-1]
+                m = re.fullmatch(r"<!--SERIAL (\d+)-->", last_line)
+                if m:
+                    serial = int(m.group(1))
                 else:
-                    last_line = data.splitlines()[-1]
-                    m = re.fullmatch(r"<!--SERIAL (\d+)-->", last_line)
-                    if m:
-                        serial = int(m.group(1))
-                    else:
-                        print(data)
-                        print("Oops: Last line does not match:", last_line)
-                        serial = None
+                    print(data)
+                    print("Oops: Last line does not match:", last_line)
+                    serial = None
 
-            #assert serial >= last_serial, f"{name}: Page has {serial}, package list has {last_serial}"
+        #assert serial >= last_serial, f"{name}: Page has {serial}, package list has {last_serial}"
 
-            if data is not None:
-                data = zlib.compress(data.encode("UTF-8"))
+        if data is not None:
+            data = zlib.compress(data.encode("UTF-8"))
 
-            await db.execute(f"""\
-                INSERT INTO {page_type}_data (
-                    name,
-                    serial,
-                    url,
-                    etag,
-                    data
-                )
-                VALUES (:name, :serial, :url, :etag, :data)
-                ON CONFLICT(name) DO UPDATE SET
-                    serial = :serial,
-                    url = :url,
-                    etag = :etag,
-                    data = :data
-                """,
-                dict(name=name, serial=serial, url=url, etag=etag, data=data)
+        await db.execute(f"""\
+            INSERT INTO {page_type}_data (
+                name,
+                serial,
+                url,
+                etag,
+                data
             )
-        return "Fetched"
+            VALUES (:name, :serial, :url, :etag, :data)
+            ON CONFLICT(name) DO UPDATE SET
+                serial = :serial,
+                url = :url,
+                etag = :etag,
+                data = :data
+            """,
+            dict(name=name, serial=serial, url=url, etag=etag, data=data)
+        )
+    return "Fetched"
 
 async def get_out_of_date(db, page_type, args):
     names = []
@@ -128,8 +127,9 @@ async def update_all_pages(db, page_type, args, progress):
     print(f"Updating {len(packages)} {page_type} pages")
     taskbar = progress.add_task(f"Updating {page_type}", total=len(packages))
     sem = asyncio.Semaphore(100)
-    async def upd(name, last_serial, etag):
+    async def upd(client, name, last_serial, etag):
         result = await update_page(
+            client,
             sem,
             db,
             page_type,
@@ -139,11 +139,12 @@ async def update_all_pages(db, page_type, args, progress):
         )
         progress.update(taskbar, advance=1)
         return result
-    updates = [
-        upd(name, last_serial, etag)
-        for name, last_serial, etag in packages
-    ]
-    results = await asyncio.gather(*updates)
+    async with httpx.AsyncClient(headers={"User-Agent": "pypidata/0.1"}) as client:
+        updates = [
+            upd(client, name, last_serial, etag)
+            for name, last_serial, etag in packages
+        ]
+        results = await asyncio.gather(*updates)
     return Counter(results).most_common()
 
 async def update_packages(db):
