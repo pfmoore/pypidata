@@ -3,14 +3,16 @@ CREATE TABLE IF NOT EXISTS json_data (
     serial INT NOT NULL,
     url TEXT,
     etag TEXT,
-    data TEXT
+    info TEXT,
+    releases TEXT,
+    vulnerabilities TEXT
 );
 CREATE TABLE IF NOT EXISTS simple_data (
     name TEXT PRIMARY KEY,
     serial INT NOT NULL,
     url TEXT,
     etag TEXT,
-    data TEXT
+    files TEXT
 );
 CREATE TABLE IF NOT EXISTS changelog (
   name TEXT,
